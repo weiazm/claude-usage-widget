@@ -1,0 +1,17 @@
+# Build output (regenerate with build.ps1)
+/claude-usage-widget.exe
+*.exe
+
+# Temporary icon previews (produced by the make_*.ps1 scripts)
+assets/preview_*.png
+exe_icon_check.png
+
+# Editor / OS junk
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Note: rsrc_windows_amd64.syso IS committed on purpose so `go build` embeds the
+# exe icon without needing the rsrc tool. Regenerate via the steps in README.
