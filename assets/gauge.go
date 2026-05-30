@@ -42,9 +42,9 @@ func Gauge(pct float64) []byte {
 // RenderICO 用给定百分比把仪表盘渲染成一张包含若干尺寸的 Windows .ico。
 //
 // 托盘图标（Gauge）和 exe 应用图标（cmd/makeappicon）都复用它，保证两者风格完全一致——
-// 同一套绘制代码就是“唯一事实来源”。颜色按用量档位（绿/黄/红）自动选取。
+// 同一套绘制代码就是“唯一事实来源”。颜色随用量在 绿→黄→橙→红 之间连续渐变。
 func RenderICO(pct float64, sizes []int) []byte {
-	c1, c2 := bandColors(pct)
+	c1, c2 := gradientColors(pct)
 	imgs := make([]image.Image, len(sizes))
 	for i, s := range sizes {
 		imgs[i] = renderGauge(s, pct, c1, c2)
@@ -223,17 +223,36 @@ func clampF(v, lo, hi float64) float64 {
 	return v
 }
 
-// bandColors 按用量档位挑选状态渐变色：弧长已经编码了精确数值，颜色只是给一个
-// 一眼可辨的信号。
-func bandColors(pct float64) (color.RGBA, color.RGBA) {
-	switch {
-	case pct >= 85: // 红
-		return color.RGBA{248, 81, 73, 255}, color.RGBA{218, 54, 51, 255}
-	case pct >= 50: // 黄
-		return color.RGBA{227, 179, 65, 255}, color.RGBA{210, 153, 34, 255}
-	default: // 绿
-		return color.RGBA{63, 185, 80, 255}, color.RGBA{46, 160, 67, 255}
+// gaugeStops 是沿用量轴（0..100）的颜色锚点。每个锚点给出一对渐变色（c1=上、c2=下，
+// 用于图标内的纵向渐变）。渲染时在相邻锚点之间线性插值，于是颜色随百分比**连续过渡**
+// （绿 → 黄绿 → 黄 → 橙 → 红），而不是之前绿/黄/红三档的硬跳变。
+//
+// Go 提示：这是一个匿名结构体切片，直接在包级用字面量初始化；at 必须从小到大排列。
+var gaugeStops = []struct {
+	at     float64
+	c1, c2 color.RGBA
+}{
+	{0, color.RGBA{70, 190, 85, 255}, color.RGBA{48, 162, 68, 255}},     // 绿（空闲）
+	{25, color.RGBA{150, 200, 72, 255}, color.RGBA{120, 172, 50, 255}},  // 黄绿
+	{50, color.RGBA{228, 192, 64, 255}, color.RGBA{200, 165, 40, 255}},  // 黄
+	{75, color.RGBA{240, 138, 56, 255}, color.RGBA{212, 108, 36, 255}},  // 橙
+	{100, color.RGBA{230, 58, 52, 255}, color.RGBA{190, 38, 36, 255}},   // 红（接近限额）
+}
+
+// gradientColors 按百分比在 gaugeStops 之间插值，返回图标背景用的一对渐变色。弧长已经
+// 编码了精确数值，颜色只是再给一个“越满越红”的连续视觉提示。
+func gradientColors(pct float64) (color.RGBA, color.RGBA) {
+	pct = clampF(pct, 0, 100)
+	for i := 1; i < len(gaugeStops); i++ {
+		hi := gaugeStops[i]
+		if pct <= hi.at {
+			lo := gaugeStops[i-1]
+			t := (pct - lo.at) / (hi.at - lo.at) // 落在 [lo,hi] 区间内的归一化位置
+			return lerp(lo.c1, hi.c1, t), lerp(lo.c2, hi.c2, t)
+		}
 	}
+	last := gaugeStops[len(gaugeStops)-1]
+	return last.c1, last.c2
 }
 
 // downsample 把 ss 倍的图像盒式滤波降到 size×size。求平均在预乘 alpha 空间进行，

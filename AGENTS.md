@@ -83,7 +83,8 @@ build.ps1                    构建脚本（见上）
   `LoadImage(LR_DEFAULTSIZE, cx=cy=0)` 按 `SM_CXICON`（100% DPI=32px，随 DPI 放大）取帧，
   再由外壳缩到约 16px 托盘槽位。**16/20/24 这类小帧根本不会被取用**，别加。
 - 几何参数（`insetFrac`/`strokeFrac`/`padFrac`/`ss`）在 gauge.go 顶部的 const 块，调它们
-  控制仪表大小、粗细、抗锯齿。颜色按用量档位绿/黄/红（`bandColors`）。
+  控制仪表大小、粗细、抗锯齿。底色随用量在 绿→黄→橙→红 之间连续插值，锚点见
+  `gaugeStops`、插值函数 `gradientColors`（改色阶改这里）。
 
 ## 数据与隐私
 
