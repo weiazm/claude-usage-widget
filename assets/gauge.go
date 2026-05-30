@@ -30,8 +30,10 @@ func Gauge(pct float64) []byte {
 	}
 
 	c1, c2 := bandColors(float64(key))
-	// Windows 在不同 DPI 下常向托盘请求的尺寸。
-	sizes := []int{16, 20, 24, 32}
+	// Windows 托盘按 DPI 缩放请求不同的小图标尺寸：SM_CXSMICON = round(16 × DPI 倍率)，
+	// 即 100%→16、125%→20、150%→24、175%→28、200%→32、250%→40。把这些原生尺寸都打包进去，
+	// 系统就总能拿到精确匹配的一张、无需缩放，显示最清晰。
+	sizes := []int{16, 20, 24, 28, 32, 40}
 	imgs := make([]image.Image, len(sizes))
 	for i, s := range sizes {
 		imgs[i] = renderGauge(s, float64(key), c1, c2)
@@ -59,9 +61,9 @@ const (
 
 	padFrac    = 0.03 // 圆角矩形背景前的外边距
 	radiusFrac = 0.22 // 背景圆角半径
-	insetFrac  = 0.24 // 边缘到仪表圆环的距离
-	strokeFrac = 0.13 // 仪表描边粗细
-	ss         = 4    // 抗锯齿用的超采样倍数
+	insetFrac  = 0.17 // 边缘到仪表圆环的距离（越小仪表越大、越占满图标）
+	strokeFrac = 0.14 // 仪表描边粗细
+	ss         = 8    // 抗锯齿用的超采样倍数（越大边缘越平滑）
 )
 
 // renderGauge 渲染某一个尺寸：先以 ss 倍分辨率用硬边判定绘制，再做盒式降采样到目标尺寸，
@@ -152,7 +154,7 @@ func arcPoint(cx, cy, R, angleDeg float64) (float64, float64) {
 }
 
 // angleOf 返回向量 (dx,dy) 的角度，范围 [0,360) 度，从 +x 轴起顺时针测量
-//（因为屏幕上 y 轴向下）。
+// （因为屏幕上 y 轴向下）。
 func angleOf(dx, dy float64) float64 {
 	a := math.Atan2(dy, dx) * 180 / math.Pi
 	if a < 0 {
@@ -294,10 +296,10 @@ func encodeICO(imgs []image.Image) []byte {
 		if e.dim < 256 {
 			dim = byte(e.dim)
 		}
-		out.WriteByte(dim) // 宽
-		out.WriteByte(dim) // 高
-		out.WriteByte(0)   // 调色板颜色数（0 = 无）
-		out.WriteByte(0)   // 保留位
+		out.WriteByte(dim)                                      // 宽
+		out.WriteByte(dim)                                      // 高
+		out.WriteByte(0)                                        // 调色板颜色数（0 = 无）
+		out.WriteByte(0)                                        // 保留位
 		_ = binary.Write(&out, binary.LittleEndian, uint16(1))  // 颜色平面数
 		_ = binary.Write(&out, binary.LittleEndian, uint16(32)) // 每像素位数
 		_ = binary.Write(&out, binary.LittleEndian, uint32(len(e.data)))
