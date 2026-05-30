@@ -1,5 +1,5 @@
-# Generates a multi-resolution app icon (assets/app.ico) for the exe.
-# Design: warm rounded-square (Anthropic coral gradient) with a white gauge arc.
+# 为 exe 生成一张多分辨率应用图标（assets/app.ico）。
+# 设计：暖色圆角方块（Anthropic 珊瑚色渐变）+ 一段白色仪表弧。
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $dir = $PSScriptRoot
@@ -26,12 +26,12 @@ function New-IconBitmap([int]$size) {
     $radius = [single]($size * 0.23)
     $path = New-RoundedPath $rect $radius
 
-    $c1 = [System.Drawing.Color]::FromArgb(232, 132, 94)   # warm coral (top-left)
-    $c2 = [System.Drawing.Color]::FromArgb(193, 95, 60)    # deeper coral (bottom-right)
+    $c1 = [System.Drawing.Color]::FromArgb(232, 132, 94)   # 暖珊瑚色（左上）
+    $c2 = [System.Drawing.Color]::FromArgb(193, 95, 60)    # 更深的珊瑚色（右下）
     $grad = New-Object System.Drawing.Drawing2D.LinearGradientBrush $rect, $c1, $c2, 50.0
     $g.FillPath($grad, $path)
 
-    # Gauge arc
+    # 仪表弧
     $inset = [single]($size * 0.30)
     $ring = New-Object System.Drawing.RectangleF $inset, ($inset * 1.05), ($size - 2 * $inset), ($size - 2 * $inset)
     $stroke = [single][Math]::Max(2.0, $size * 0.095)
@@ -60,19 +60,19 @@ foreach ($s in $sizes) {
 
 $out = New-Object System.IO.MemoryStream
 $bw = New-Object System.IO.BinaryWriter $out
-$bw.Write([uint16]0)              # reserved
-$bw.Write([uint16]1)              # type: icon
-$bw.Write([uint16]$sizes.Count)   # image count
+$bw.Write([uint16]0)              # 保留位
+$bw.Write([uint16]1)              # 类型：图标
+$bw.Write([uint16]$sizes.Count)   # 图像数量
 $offset = 6 + 16 * $sizes.Count
 for ($i = 0; $i -lt $sizes.Count; $i++) {
     $s = $sizes[$i]; $data = $pngs[$i]
     $dim = [byte]($(if ($s -ge 256) { 0 } else { $s }))
-    $bw.Write($dim)               # width
-    $bw.Write($dim)               # height
-    $bw.Write([byte]0)            # palette count
-    $bw.Write([byte]0)            # reserved
-    $bw.Write([uint16]1)          # color planes
-    $bw.Write([uint16]32)         # bits per pixel
+    $bw.Write($dim)               # 宽
+    $bw.Write($dim)               # 高
+    $bw.Write([byte]0)            # 调色板颜色数
+    $bw.Write([byte]0)            # 保留位
+    $bw.Write([uint16]1)          # 颜色平面数
+    $bw.Write([uint16]32)         # 每像素位数
     $bw.Write([uint32]$data.Length)
     $bw.Write([uint32]$offset)
     $offset += $data.Length

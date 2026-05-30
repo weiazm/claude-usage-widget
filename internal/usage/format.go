@@ -6,15 +6,13 @@ import (
 	"time"
 )
 
-// Summary renders the full multi-line usage block used by the dialog and the
-// CLI self-check.
+// Summary 渲染完整的多行用量文本块，供弹窗和命令行自检使用。
 //
-// Go note: "(u *Usage)" is a method receiver — it attaches this function to the
-// Usage type, so you call it as u.Summary(). Using a pointer receiver (*Usage)
-// avoids copying the struct and lets methods mutate it if needed.
+// Go 提示：“(u *Usage)”是方法接收者——它把这个函数挂到 Usage 类型上，于是你可以用
+// u.Summary() 来调用。用指针接收者（*Usage）能避免复制结构体，也允许方法在需要时修改它。
 func (u *Usage) Summary() string {
-	// Go note: []string{...} is a slice (a growable array view) built inline.
-	// strings.Join glues the elements together with "\n" between them.
+	// Go 提示：[]string{...} 是内联构造的切片（一个可增长的数组视图）。
+	// strings.Join 用 "\n" 把各元素拼接起来。
 	return strings.Join([]string{
 		Line("5 小时: ", u.FiveHour),
 		Line("7 天:   ", u.SevenDay),
@@ -23,25 +21,24 @@ func (u *Usage) Summary() string {
 	}, "\n")
 }
 
-// FormatPercent renders a window as "37%" or "n/a" when the window is absent.
+// FormatPercent 把一个窗口渲染成 "37%"；窗口缺失（nil）时渲染成 "n/a"。
 //
-// Go note: w is a *Window pointer, so we guard against nil before reading it —
-// dereferencing a nil pointer would panic (crash).
+// Go 提示：w 是 *Window 指针，所以读取前要先判空——对 nil 指针解引用会 panic（崩溃）。
 func FormatPercent(w *Window) string {
 	if w == nil {
 		return "n/a"
 	}
-	// %.0f prints a float with 0 decimals; %% prints a literal percent sign.
+	// %.0f 打印不带小数的浮点数；%% 打印一个字面的百分号。
 	return fmt.Sprintf("%.0f%%", w.Utilization)
 }
 
-// FormatReset renders the reset countdown, e.g. "1h38m 后重置".
+// FormatReset 渲染重置倒计时，例如 "1h38m 后重置"。
 func FormatReset(w *Window) string {
 	if w == nil || w.ResetsAt == nil {
 		return ""
 	}
-	// Go note: *w.ResetsAt dereferences the pointer to get the time.Time value.
-	// time.Until returns a Duration (the gap from now until that time).
+	// Go 提示：*w.ResetsAt 解引用指针，取出 time.Time 值。
+	// time.Until 返回一个 Duration（从现在到那个时间点的间隔）。
 	d := time.Until(*w.ResetsAt)
 	if d <= 0 {
 		return "即将重置"
@@ -59,7 +56,7 @@ func FormatReset(w *Window) string {
 	return fmt.Sprintf("%dm 后重置", m)
 }
 
-// Line renders one labelled usage line, e.g. "5 小时:  37%  (1h38m 后重置)".
+// Line 渲染一行带标签的用量，例如 "5 小时:  37%  (1h38m 后重置)"。
 func Line(label string, w *Window) string {
 	pct := FormatPercent(w)
 	reset := FormatReset(w)

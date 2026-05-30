@@ -1,9 +1,8 @@
-// Command usagecheck is a small command-line self-check: read the token and
-// print current Claude usage to stdout. Run with: go run ./cmd/usagecheck
+// Command usagecheck 是一个小型命令行自检工具：读取 token 并把当前 Claude 用量打印到
+// 标准输出。运行方式：go run ./cmd/usagecheck
 //
-// Go note: this is a *second* program in the same module. Each folder under
-// cmd/ with its own "package main" + func main() builds into its own binary,
-// while sharing the internal/ libraries with the tray app.
+// Go 提示：这是同一个模块里的*第二个*程序。cmd/ 下每个带自己 "package main" + func main()
+// 的文件夹都会编译成各自独立的二进制，同时共享 internal/ 下的库。
 package main
 
 import (
@@ -18,13 +17,13 @@ import (
 func main() {
 	tok, err := auth.Read()
 	if err != nil {
-		// Go note: os.Stderr is the standard error stream; os.Exit(1) ends the
-		// program with a non-zero status so scripts know it failed.
+		// Go 提示：os.Stderr 是标准错误流；os.Exit(1) 以非零状态码结束程序，让脚本
+		// 知道它失败了。
 		fmt.Fprintln(os.Stderr, "auth:", err)
 		os.Exit(1)
 	}
-	// context.Background() is the empty root context — fine for a one-shot CLI
-	// run with no deadline of its own (Fetch applies its own timeout).
+	// context.Background() 是空的根 context——对一个没有自身截止时间的一次性 CLI 运行
+	// 来说足够了（Fetch 会套用它自己的超时）。
 	u, err := usage.Fetch(context.Background(), tok.AccessToken)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "fetch:", err)

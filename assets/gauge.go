@@ -1,7 +1,6 @@
-// Package assets renders the tray icon. Instead of shipping a few pre-baked
-// images, we draw the gauge in pure Go at runtime so the arc length tracks the
-// *exact* usage percentage (e.g. 37% -> 37% of the arc filled), not a coarse
-// green/amber/red band. Pure stdlib: no cgo, no external image libraries.
+// Package assets 负责渲染托盘图标。我们不预制几张图片，而是在运行时用纯 Go 把仪表盘
+// 画出来，让弧长精确跟随用量百分比（例如 37% 就填 37% 的弧），而不是绿/黄/红三档的粗略
+// 近似。纯标准库实现：无 cgo、无外部图像库。
 package assets
 
 import (
@@ -14,16 +13,14 @@ import (
 	"sync"
 )
 
-// Gauge returns Windows .ico bytes for a gauge filled to pct (0..100), ready to
-// hand to systray.SetIcon. The icon packs several pixel sizes so Windows can
-// pick a crisp one for the current DPI.
+// Gauge 返回 pct（0..100）对应的 Windows .ico 字节，可直接交给 systray.SetIcon。
+// 图标里打包了多个像素尺寸，让 Windows 能按当前 DPI 挑一张清晰的。
 //
-// Go note: rendering is a little work, so we memoise. The exported function is
-// the only thing other packages touch; everything below is lowercase = private.
+// Go 提示：渲染要做一点工作，所以我们做了缓存。导出的这个函数是其它包唯一接触到的入口；
+// 下面所有小写名字都是私有的。
 func Gauge(pct float64) []byte {
-	// Round to a whole percent: that is all the eye can resolve in a ~16px tray
-	// icon, and it means we redraw at most ~100 distinct icons over the app's
-	// life (and usually reuse the cached one between 60s polls).
+	// 四舍五入到整数百分比：在约 16px 的托盘图标里，眼睛也只能分辨到这个精度，而且这意味
+	// 着整个程序生命周期里最多只画约 100 张不同的图标（轮询之间通常还能复用缓存的那张）。
 	key := int(math.Round(clampF(pct, 0, 100)))
 
 	gaugeMu.Lock()
@@ -33,7 +30,7 @@ func Gauge(pct float64) []byte {
 	}
 
 	c1, c2 := bandColors(float64(key))
-	// Sizes Windows commonly requests for the tray across DPI settings.
+	// Windows 在不同 DPI 下常向托盘请求的尺寸。
 	sizes := []int{16, 20, 24, 32}
 	imgs := make([]image.Image, len(sizes))
 	for i, s := range sizes {
@@ -44,51 +41,49 @@ func Gauge(pct float64) []byte {
 	return gaugeBytes
 }
 
-// Go note: a package-level mutex + cache. sync.Mutex guards the two cache vars
-// so concurrent callers (we only have one, but this keeps it safe) don't race.
+// Go 提示：包级的互斥量 + 缓存。sync.Mutex 保护这两个缓存变量，让并发调用方（虽然我们
+// 只有一个，但这样更安全）不会发生竞态。
 var (
 	gaugeMu    sync.Mutex
-	gaugeKey   = -1 // last rendered percent; -1 means "nothing cached yet"
+	gaugeKey   = -1 // 上次渲染的百分比；-1 表示“还没有缓存”
 	gaugeBytes []byte
 )
 
-// --- geometry constants (as fractions of the icon size) ------------------------
+// --- 几何常量（以图标尺寸的比例表示）------------------------------------------
 //
-// The gauge is an arc with a 90° gap at the bottom: it starts at the lower-left
-// (135°) and sweeps clockwise up to 270° at full. Angles use screen coordinates
-// (y grows downward), so 0°=right, 90°=down, 180°=left, 270°=up.
+// 仪表是一段在底部留 90° 缺口的圆弧：从左下角（135°）开始，顺时针扫到满刻度时为 270°。
+// 角度采用屏幕坐标（y 轴向下），所以 0°=右、90°=下、180°=左、270°=上。
 const (
-	arcStart = 135.0 // where the track begins (lower-left)
-	arcFull  = 270.0 // total sweep of a full gauge
+	arcStart = 135.0 // 轨道起点（左下角）
+	arcFull  = 270.0 // 满刻度时的总扫过角度
 
-	padFrac    = 0.03 // outer padding before the rounded-rect background
-	radiusFrac = 0.22 // background corner radius
-	insetFrac  = 0.24 // distance from edge to the gauge ring
-	strokeFrac = 0.13 // gauge stroke thickness
-	ss         = 4    // supersampling factor for anti-aliasing
+	padFrac    = 0.03 // 圆角矩形背景前的外边距
+	radiusFrac = 0.22 // 背景圆角半径
+	insetFrac  = 0.24 // 边缘到仪表圆环的距离
+	strokeFrac = 0.13 // 仪表描边粗细
+	ss         = 4    // 抗锯齿用的超采样倍数
 )
 
-// renderGauge draws one size by rendering at ss× resolution with hard-edged
-// tests, then box-downsampling to the target size for smooth (anti-aliased)
-// edges — cheaper and simpler than an analytic vector rasteriser.
+// renderGauge 渲染某一个尺寸：先以 ss 倍分辨率用硬边判定绘制，再做盒式降采样到目标尺寸，
+// 从而得到平滑（抗锯齿）的边缘——比解析式矢量光栅化更简单也更省。
 func renderGauge(size int, pct float64, c1, c2 color.RGBA) *image.RGBA {
 	big := drawBig(size*ss, pct, c1, c2)
 	return downsample(big, size, ss)
 }
 
-// drawBig paints the full-resolution gauge. fs is the supersampled side length.
+// drawBig 绘制全分辨率的仪表。S 是超采样后的边长。
 func drawBig(S int, pct float64, c1, c2 color.RGBA) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, S, S))
 	fs := float64(S)
 
-	// Background rounded rectangle (filled with the status gradient).
+	// 背景圆角矩形（用状态渐变色填充）。
 	pad := math.Max(1, fs*padFrac)
 	rectX, rectY := pad, pad
 	rectW, rectH := fs-2*pad, fs-2*pad
 	radius := fs * radiusFrac
 
-	// Gauge ring. Nudged down slightly (×1.04) so it sits centred given the
-	// bottom gap, matching the app icon's look.
+	// 仪表圆环。略微下移（×1.04），让它在有底部缺口的情况下看起来居中，和 exe 应用图标
+	// 的观感保持一致。
 	inset := fs * insetFrac
 	ringW := fs - 2*inset
 	cx := inset + ringW/2
@@ -99,13 +94,13 @@ func drawBig(S int, pct float64, c1, c2 color.RGBA) *image.RGBA {
 
 	sweepVal := arcFull * clampF(pct, 0, 100) / 100
 
-	// Endpoint centres, used to round the arc caps.
-	tsX, tsY := arcPoint(cx, cy, R, arcStart)         // track + value start
-	teX, teY := arcPoint(cx, cy, R, arcStart+arcFull) // track end
-	veX, veY := arcPoint(cx, cy, R, arcStart+sweepVal) // value end
+	// 各端点的圆心，用来给弧的端帽做圆角。
+	tsX, tsY := arcPoint(cx, cy, R, arcStart)          // 轨道与数值弧的起点
+	teX, teY := arcPoint(cx, cy, R, arcStart+arcFull)  // 轨道终点
+	veX, veY := arcPoint(cx, cy, R, arcStart+sweepVal) // 数值弧终点
 
-	// Colours. White value arc over a dark "groove" track gives strong contrast.
-	track := color.RGBA{0, 0, 0, 120} // translucent black, blended over the bg
+	// 颜色。白色数值弧叠在深色“凹槽”轨道上，对比强烈。
+	track := color.RGBA{0, 0, 0, 120} // 半透明黑，叠加在背景上
 	white := color.RGBA{255, 255, 255, 255}
 
 	for y := 0; y < S; y++ {
@@ -113,27 +108,27 @@ func drawBig(S int, pct float64, c1, c2 color.RGBA) *image.RGBA {
 			px, py := float64(x)+0.5, float64(y)+0.5
 
 			var c color.RGBA
-			// 1) Background.
+			// 1) 背景。
 			if roundRectSDF(px, py, rectX, rectY, rectW, rectH, radius) <= 0 {
 				t := (py - rectY) / rectH
 				c = lerp(c1, c2, t)
 			}
 			if c.A == 0 {
-				continue // outside the rounded rect: leave transparent
+				continue // 在圆角矩形之外：保持透明
 			}
 
 			d := math.Hypot(px-cx, py-cy)
 			onRing := math.Abs(d-R) <= half
 			ang := angleOf(px-cx, py-cy)
 
-			// 2) Track (the unfilled groove): full 270° sweep + round caps.
+			// 2) 轨道（未填充的凹槽）：完整的 270° 扫过 + 圆角端帽。
 			if (onRing && arcDelta(ang, arcStart) <= arcFull) ||
 				within(px, py, tsX, tsY, half) ||
 				within(px, py, teX, teY, half) {
 				c = over(c, track)
 			}
 
-			// 3) Value arc (the filled portion): sweep proportional to pct.
+			// 3) 数值弧（已填充部分）：扫过角度与 pct 成正比。
 			if sweepVal > 0 {
 				if (onRing && arcDelta(ang, arcStart) <= sweepVal) ||
 					within(px, py, tsX, tsY, half) ||
@@ -148,16 +143,16 @@ func drawBig(S int, pct float64, c1, c2 color.RGBA) *image.RGBA {
 	return img
 }
 
-// --- small geometry / colour helpers ------------------------------------------
+// --- 几何 / 颜色小工具 ---------------------------------------------------------
 
-// arcPoint returns the point on a circle (centre cx,cy, radius R) at angleDeg.
+// arcPoint 返回圆（圆心 cx,cy，半径 R）上角度为 angleDeg 处的点。
 func arcPoint(cx, cy, R, angleDeg float64) (float64, float64) {
 	r := angleDeg * math.Pi / 180
 	return cx + R*math.Cos(r), cy + R*math.Sin(r)
 }
 
-// angleOf returns the angle of vector (dx,dy) in [0,360) degrees, measured
-// clockwise from the +x axis (because y points down on screen).
+// angleOf 返回向量 (dx,dy) 的角度，范围 [0,360) 度，从 +x 轴起顺时针测量
+//（因为屏幕上 y 轴向下）。
 func angleOf(dx, dy float64) float64 {
 	a := math.Atan2(dy, dx) * 180 / math.Pi
 	if a < 0 {
@@ -166,27 +161,26 @@ func angleOf(dx, dy float64) float64 {
 	return a
 }
 
-// arcDelta is how far ang lies clockwise past start, in [0,360). A point is in
-// an arc of sweep s if arcDelta(ang,start) <= s.
+// arcDelta 表示 ang 沿顺时针方向超出 start 多少，范围 [0,360)。一个点落在扫过角度为 s
+// 的弧内，当且仅当 arcDelta(ang,start) <= s。
 func arcDelta(ang, start float64) float64 {
 	return math.Mod(ang-start+360, 360)
 }
 
-// within reports whether (px,py) is inside radius r of (cx,cy) — used for the
-// round end caps of the arcs.
+// within 判断 (px,py) 是否在以 (cx,cy) 为圆心、半径 r 的圆内——用于弧的圆角端帽。
 func within(px, py, cx, cy, r float64) bool {
 	dx, dy := px-cx, py-cy
 	return dx*dx+dy*dy <= r*r
 }
 
-// roundRectSDF is the signed distance to a rounded rectangle: <=0 means inside.
+// roundRectSDF 是到圆角矩形的有符号距离：<=0 表示在内部。
 func roundRectSDF(px, py, x, y, w, h, r float64) float64 {
 	qx := math.Abs(px-(x+w/2)) - (w/2 - r)
 	qy := math.Abs(py-(y+h/2)) - (h/2 - r)
 	return math.Hypot(math.Max(qx, 0), math.Max(qy, 0)) + math.Min(math.Max(qx, qy), 0) - r
 }
 
-// over alpha-composites src on top of an opaque dst (standard "source over").
+// over 把 src 用标准的“source over”方式叠加到不透明的 dst 之上。
 func over(dst, src color.RGBA) color.RGBA {
 	a := float64(src.A) / 255
 	return color.RGBA{
@@ -197,7 +191,7 @@ func over(dst, src color.RGBA) color.RGBA {
 	}
 }
 
-// lerp linearly interpolates between two colours (t in 0..1) — the bg gradient.
+// lerp 在两个颜色之间做线性插值（t 取 0..1）——用于背景渐变。
 func lerp(a, b color.RGBA, t float64) color.RGBA {
 	t = clampF(t, 0, 1)
 	return color.RGBA{
@@ -218,21 +212,21 @@ func clampF(v, lo, hi float64) float64 {
 	return v
 }
 
-// bandColors picks the status gradient by usage band: the arc length already
-// encodes the precise value, so the colour just gives an at-a-glance signal.
+// bandColors 按用量档位挑选状态渐变色：弧长已经编码了精确数值，颜色只是给一个
+// 一眼可辨的信号。
 func bandColors(pct float64) (color.RGBA, color.RGBA) {
 	switch {
-	case pct >= 85: // red
+	case pct >= 85: // 红
 		return color.RGBA{248, 81, 73, 255}, color.RGBA{218, 54, 51, 255}
-	case pct >= 50: // amber
+	case pct >= 50: // 黄
 		return color.RGBA{227, 179, 65, 255}, color.RGBA{210, 153, 34, 255}
-	default: // green
+	default: // 绿
 		return color.RGBA{63, 185, 80, 255}, color.RGBA{46, 160, 67, 255}
 	}
 }
 
-// downsample box-filters the ss× image down to size×size. Averaging is done in
-// premultiplied-alpha space so transparent edge pixels don't bleed dark fringes.
+// downsample 把 ss 倍的图像盒式滤波降到 size×size。求平均在预乘 alpha 空间进行，
+// 这样透明的边缘像素不会渗出暗色描边。
 func downsample(big *image.RGBA, size, ss int) *image.RGBA {
 	out := image.NewRGBA(image.Rect(0, 0, size, size))
 	n := float64(ss * ss)
@@ -252,7 +246,7 @@ func downsample(big *image.RGBA, size, ss int) *image.RGBA {
 			a := pa / n
 			var r, g, b uint8
 			if a > 0 {
-				scale := a / 255 // un-premultiply
+				scale := a / 255 // 反预乘
 				r = clampByte(pr / n / scale)
 				g = clampByte(pg / n / scale)
 				b = clampByte(pb / n / scale)
@@ -273,8 +267,8 @@ func clampByte(v float64) uint8 {
 	return uint8(v + 0.5)
 }
 
-// encodeICO packs PNG-compressed images into a Windows .ico container. Windows
-// (Vista+) and the systray loader both accept PNG-in-ICO entries.
+// encodeICO 把若干张 PNG 压缩的图像打包成 Windows .ico 容器。Windows（Vista 及以上）
+// 和 systray 的加载器都支持 PNG-in-ICO 的条目。
 func encodeICO(imgs []image.Image) []byte {
 	type entry struct {
 		data []byte
@@ -288,24 +282,24 @@ func encodeICO(imgs []image.Image) []byte {
 	}
 
 	var out bytes.Buffer
-	// ICONDIR header: reserved(0), type(1=icon), image count.
+	// ICONDIR 头：保留位(0)、类型(1=图标)、图像数量。
 	_ = binary.Write(&out, binary.LittleEndian, uint16(0))
 	_ = binary.Write(&out, binary.LittleEndian, uint16(1))
 	_ = binary.Write(&out, binary.LittleEndian, uint16(len(entries)))
 
-	offset := 6 + 16*len(entries) // headers come before the pixel data
+	offset := 6 + 16*len(entries) // 各条目的头部排在像素数据之前
 	for _, e := range entries {
-		// 0 in the width/height byte means "256"; all our sizes are < 256.
+		// 宽/高字节里写 0 表示“256”；我们所有尺寸都 < 256。
 		dim := byte(0)
 		if e.dim < 256 {
 			dim = byte(e.dim)
 		}
-		out.WriteByte(dim) // width
-		out.WriteByte(dim) // height
-		out.WriteByte(0)   // palette colours (0 = none)
-		out.WriteByte(0)   // reserved
-		_ = binary.Write(&out, binary.LittleEndian, uint16(1))  // colour planes
-		_ = binary.Write(&out, binary.LittleEndian, uint16(32)) // bits per pixel
+		out.WriteByte(dim) // 宽
+		out.WriteByte(dim) // 高
+		out.WriteByte(0)   // 调色板颜色数（0 = 无）
+		out.WriteByte(0)   // 保留位
+		_ = binary.Write(&out, binary.LittleEndian, uint16(1))  // 颜色平面数
+		_ = binary.Write(&out, binary.LittleEndian, uint16(32)) // 每像素位数
 		_ = binary.Write(&out, binary.LittleEndian, uint32(len(e.data)))
 		_ = binary.Write(&out, binary.LittleEndian, uint32(offset))
 		offset += len(e.data)
