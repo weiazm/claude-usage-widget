@@ -8,7 +8,13 @@ import (
 
 // Summary renders the full multi-line usage block used by the dialog and the
 // CLI self-check.
+//
+// Go note: "(u *Usage)" is a method receiver — it attaches this function to the
+// Usage type, so you call it as u.Summary(). Using a pointer receiver (*Usage)
+// avoids copying the struct and lets methods mutate it if needed.
 func (u *Usage) Summary() string {
+	// Go note: []string{...} is a slice (a growable array view) built inline.
+	// strings.Join glues the elements together with "\n" between them.
 	return strings.Join([]string{
 		Line("5 小时: ", u.FiveHour),
 		Line("7 天:   ", u.SevenDay),
@@ -18,10 +24,14 @@ func (u *Usage) Summary() string {
 }
 
 // FormatPercent renders a window as "37%" or "n/a" when the window is absent.
+//
+// Go note: w is a *Window pointer, so we guard against nil before reading it —
+// dereferencing a nil pointer would panic (crash).
 func FormatPercent(w *Window) string {
 	if w == nil {
 		return "n/a"
 	}
+	// %.0f prints a float with 0 decimals; %% prints a literal percent sign.
 	return fmt.Sprintf("%.0f%%", w.Utilization)
 }
 
@@ -30,6 +40,8 @@ func FormatReset(w *Window) string {
 	if w == nil || w.ResetsAt == nil {
 		return ""
 	}
+	// Go note: *w.ResetsAt dereferences the pointer to get the time.Time value.
+	// time.Until returns a Duration (the gap from now until that time).
 	d := time.Until(*w.ResetsAt)
 	if d <= 0 {
 		return "即将重置"

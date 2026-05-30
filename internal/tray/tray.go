@@ -18,6 +18,10 @@ import (
 
 const pollInterval = 60 * time.Second
 
+// menu holds pointers to every tray menu item so update() can change their text.
+//
+// Go note: *systray.MenuItem is a pointer; the systray library hands us pointers
+// so that calling it.SetTitle(...) updates the real on-screen item.
 type menu struct {
 	header  *systray.MenuItem
 	fiveHr  *systray.MenuItem
@@ -30,6 +34,10 @@ type menu struct {
 }
 
 // Run starts the systray event loop. It blocks until the user quits.
+//
+// Go note: systray.Run takes two functions as arguments (functions are values in
+// Go). onReady runs once the tray is ready; the second is an onExit callback —
+// here an empty inline function "func() {}" because we have no cleanup to do.
 func Run() {
 	systray.Run(onReady, func() {})
 }
@@ -39,6 +47,8 @@ func onReady() {
 	systray.SetTitle("")
 	systray.SetTooltip("Claude Usage — 加载中…")
 
+	// Go note: &menu{...} builds a menu struct and takes its address. We set the
+	// header field inline; the rest are assigned below.
 	m := &menu{
 		header: systray.AddMenuItem("Claude Usage", ""),
 	}
@@ -53,51 +63,63 @@ func onReady() {
 	m.refresh = systray.AddMenuItem("立即刷新", "重新拉取用量")
 	m.quit = systray.AddMenuItem("退出", "退出小部件")
 
+	// Go note: a channel is a typed pipe for passing values between goroutines.
+	// chan struct{} carries no data — it is a pure signal. The "1" gives it a
+	// buffer of one, so a send never blocks even if no one is reading yet.
 	refreshNow := make(chan struct{}, 1)
 
-	// Event loop for clicks.
+	// Go note: "go func() { ... }()" starts a goroutine — a lightweight thread.
+	// This one watches for menu clicks forever.
 	go func() {
 		for {
+			// select waits on multiple channels and runs whichever is ready.
+			// Each menu item exposes a ClickedCh channel that fires on click.
 			select {
 			case <-m.refresh.ClickedCh:
+				// Ask the polling goroutine to refresh. The inner non-blocking
+				// select drops the signal if one is already queued (buffer full),
+				// so rapid clicks coalesce instead of piling up.
 				select {
 				case refreshNow <- struct{}{}:
 				default:
 				}
 			case <-m.quit.ClickedCh:
 				systray.Quit()
-				return
+				return // ends this goroutine
 			}
 		}
 	}()
 
-	// Polling loop.
+	// Second goroutine: the polling loop that refreshes the data.
 	go func() {
+		// A Ticker fires on its channel (ticker.C) every pollInterval.
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
-		update(m)
+		update(m) // fetch immediately on startup
 		for {
 			select {
-			case <-ticker.C:
+			case <-ticker.C: // periodic refresh
 				update(m)
-			case <-refreshNow:
+			case <-refreshNow: // manual "立即刷新"
 				update(m)
 			}
 		}
 	}()
 }
 
+// addInfoItem adds a non-clickable (disabled) row used purely to display text.
 func addInfoItem(text string) *systray.MenuItem {
 	it := systray.AddMenuItem(text, "")
 	it.Disable()
 	return it
 }
 
+// update fetches current usage and pushes it into the menu, icon and tooltip.
 func update(m *menu) {
 	tok, err := auth.Read()
 	if err != nil {
 		showError(m, err)
-		return
+		return // bail out early on error — a common Go pattern
 	}
 	ctx := context.Background()
 	u, err := usage.Fetch(ctx, tok.AccessToken)
@@ -112,6 +134,8 @@ func update(m *menu) {
 	m.sonnet.SetTitle(usage.Line("Sonnet周:", u.SevenDaySonnet))
 	m.status.SetTitle("更新于 " + u.FetchedAt.Format("15:04"))
 
+	// Go note: var declares pct with its zero value (0.0). We only overwrite it
+	// when FiveHour is present, so a missing window safely keeps the green icon.
 	var pct float64
 	if u.FiveHour != nil {
 		pct = u.FiveHour.Utilization
@@ -125,8 +149,12 @@ func update(m *menu) {
 	debug.FreeOSMemory()
 }
 
+// showError maps an error to a friendly Chinese status line and tooltip.
 func showError(m *menu, err error) {
 	var msg string
+	// Go note: a switch with no expression acts like if/else-if. errors.Is checks
+	// whether err is (or wraps) one of our sentinel errors. The second case lists
+	// two values — either one matches.
 	switch {
 	case errors.Is(err, auth.ErrNoCredentials):
 		msg = "未登录 Claude Code"
