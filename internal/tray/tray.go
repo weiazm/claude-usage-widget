@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"runtime/debug"
 	"time"
 
@@ -36,10 +37,16 @@ type menu struct {
 // Run 启动 systray 事件循环。它会一直阻塞，直到用户退出。
 //
 // Go 提示：systray.Run 接收两个函数作为参数（函数在 Go 里是值）。onReady 在托盘就绪后
-// 运行一次；第二个是 onExit 回调——这里用一个空的内联函数 "func() {}"，因为我们没有需要
-// 清理的东西。
+// 运行一次；第二个是 onExit 回调。
+//
+// onExit 里直接 os.Exit(0) 是为了“退干净”：systray 的退出只拆掉托盘 UI 和消息循环，但我们
+// 还有后台的 60s 轮询 goroutine（可能正卡在一次网络请求里）。光让消息循环结束，进程不一定会
+// 立刻终止。systray 在删除托盘图标后、消息循环收尾前会调用 onExit，正好是强制退出的时机——
+// 此时图标已经移除，os.Exit(0) 立刻结束整个进程（含所有 goroutine），不留残留进程。
 func Run() {
-	systray.Run(onReady, func() {})
+	systray.Run(onReady, func() { os.Exit(0) })
+	// 兜底：万一消息循环是正常返回（没走 onExit），也确保进程退出。
+	os.Exit(0)
 }
 
 func onReady() {

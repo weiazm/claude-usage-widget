@@ -29,18 +29,27 @@ func Gauge(pct float64) []byte {
 		return gaugeBytes
 	}
 
-	c1, c2 := bandColors(float64(key))
-	// Windows 托盘按 DPI 缩放请求不同的小图标尺寸：SM_CXSMICON = round(16 × DPI 倍率)，
-	// 即 100%→16、125%→20、150%→24、175%→28、200%→32、250%→40。把这些原生尺寸都打包进去，
-	// 系统就总能拿到精确匹配的一张、无需缩放，显示最清晰。
-	sizes := []int{16, 20, 24, 28, 32, 40}
-	imgs := make([]image.Image, len(sizes))
-	for i, s := range sizes {
-		imgs[i] = renderGauge(s, float64(key), c1, c2)
-	}
-	gaugeBytes = encodeICO(imgs)
+	// 关键：fyne/systray 在 Windows 上用 LoadImage(LR_DEFAULTSIZE, cx=cy=0) 加载托盘图标，
+	// 这会按“大图标”指标 SM_CXICON 取帧（100% DPI=32px，随 DPI 放大：125%→40、150%→48、
+	// 200%→64），随后由系统外壳把它缩放进约 16px 的托盘槽位。也就是说：被选用的是这些“大”帧，
+	// 16/20/24 那种小帧根本不会被取用。所以这里打包 SM_CXICON 在各 DPI 下的原生尺寸，让系统
+	// 总能拿到精确匹配的大帧、无需软缩放，最终下采样到托盘时最锐利。
+	gaugeBytes = RenderICO(float64(key), []int{32, 40, 48, 64})
 	gaugeKey = key
 	return gaugeBytes
+}
+
+// RenderICO 用给定百分比把仪表盘渲染成一张包含若干尺寸的 Windows .ico。
+//
+// 托盘图标（Gauge）和 exe 应用图标（cmd/makeappicon）都复用它，保证两者风格完全一致——
+// 同一套绘制代码就是“唯一事实来源”。颜色按用量档位（绿/黄/红）自动选取。
+func RenderICO(pct float64, sizes []int) []byte {
+	c1, c2 := bandColors(pct)
+	imgs := make([]image.Image, len(sizes))
+	for i, s := range sizes {
+		imgs[i] = renderGauge(s, pct, c1, c2)
+	}
+	return encodeICO(imgs)
 }
 
 // Go 提示：包级的互斥量 + 缓存。sync.Mutex 保护这两个缓存变量，让并发调用方（虽然我们
@@ -59,10 +68,10 @@ const (
 	arcStart = 135.0 // 轨道起点（左下角）
 	arcFull  = 270.0 // 满刻度时的总扫过角度
 
-	padFrac    = 0.03 // 圆角矩形背景前的外边距
+	padFrac    = 0.02 // 圆角矩形背景前的外边距
 	radiusFrac = 0.22 // 背景圆角半径
-	insetFrac  = 0.17 // 边缘到仪表圆环的距离（越小仪表越大、越占满图标）
-	strokeFrac = 0.14 // 仪表描边粗细
+	insetFrac  = 0.15 // 边缘到仪表圆环的距离（越小仪表越大、越占满图标）
+	strokeFrac = 0.15 // 仪表描边粗细
 	ss         = 8    // 抗锯齿用的超采样倍数（越大边缘越平滑）
 )
 
