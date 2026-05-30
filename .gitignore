@@ -1,6 +1,9 @@
 # Build output (regenerate with build.ps1)
 /claude-usage-widget.exe
 *.exe
+# Go's Windows linker leaves "name.exe~" backups when the old exe is in use
+*.exe~
+*~
 
 # Temporary icon previews (produced by the make_*.ps1 scripts)
 assets/preview_*.png
