@@ -43,7 +43,7 @@ func Run() {
 }
 
 func onReady() {
-	systray.SetIcon(assets.IconGreen)
+	systray.SetIcon(assets.Gauge(0))
 	systray.SetTitle("")
 	systray.SetTooltip("Claude Usage — 加载中…")
 
@@ -140,7 +140,7 @@ func update(m *menu) {
 	if u.FiveHour != nil {
 		pct = u.FiveHour.Utilization
 	}
-	systray.SetIcon(assets.IconFor(pct))
+	systray.SetIcon(assets.Gauge(pct))
 	systray.SetTooltip(fmt.Sprintf("Claude — 5小时 %s / 7天 %s",
 		usage.FormatPercent(u.FiveHour), usage.FormatPercent(u.SevenDay)))
 

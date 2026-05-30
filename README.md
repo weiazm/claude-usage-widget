@@ -35,7 +35,9 @@
 
 ## 功能
 
-- 托盘图标按 5 小时窗口用量变色：绿 `<50%` / 黄 `50–85%` / 红 `≥85%`。
+- 托盘图标是**动态仪表盘**：弧长按 5 小时窗口用量实时绘制（37% 就填 37% 的弧，而非三档近似），
+  并按用量变色：绿 `<50%` / 黄 `50–85%` / 红 `≥85%`。白色填充弧 + 深色凹槽轨道，对比强、托盘里也清晰。
+  图标在运行时用纯 Go（标准库 `image`）绘制，按整数百分比缓存，无需任何外部图像库或预制资源。
 - 鼠标点击托盘图标展开菜单，显示：5 小时、7 天、Opus 周、Sonnet 周 用量与重置倒计时。
 - 每 60 秒自动刷新，或菜单「立即刷新」手动刷新。
 - 悬浮 tooltip 显示一行摘要。
@@ -56,10 +58,9 @@ claude-usage-widget/
 │   ├── dialog/dialog_windows.go         # 调 Win32 MessageBoxW 弹窗
 │   └── singleinstance/singleinstance_windows.go  # Win32 命名互斥量实现单实例
 ├── assets/
-│   ├── icons.go                         # go:embed 内嵌三个状态托盘图标
-│   ├── icon_{green,amber,red}.ico       # 托盘状态图标（被 go:embed 引用，必须提交）
+│   ├── gauge.go                         # 运行时用纯 Go 绘制动态仪表托盘图标（弧长=百分比）
 │   ├── app.ico                          # exe 应用图标源
-│   └── make_{appicon,trayicons}.ps1     # 图标生成脚本
+│   └── make_appicon.ps1                 # exe 图标生成脚本
 ├── cmd/usagecheck/main.go               # 命令行自检：直接打印用量（不弹托盘）
 ├── rsrc_windows_amd64.syso              # 由 app.ico 生成的资源文件，go build 自动链接出 exe 图标
 └── build.ps1                            # 构建脚本
@@ -147,10 +148,11 @@ go run ./cmd/usagecheck
 2. **配置文件** —— `%APPDATA%\claude-usage-widget\config.json` 支持自定义轮询间隔、
    用哪个窗口驱动图标颜色等，避免改代码重编。
 3. **应用内「开机自启」开关** —— 菜单加勾选项，自动写/删启动文件夹快捷方式（替代手动脚本）。
-4. **动态仪表图标** —— 按真实百分比绘制弧长（而非绿/黄/红三档），图标本身就是进度条。
-5. **阈值桌面通知** —— 用量超过阈值（如 90%）时弹一条 Windows toast 提醒。
-6. **更精致的点击面板** —— 用独立 Win32 popup 窗口替代菜单项，展示进度条、额外用量额度等。
-7. **macOS 菜单栏版** —— 复用 `internal/auth`、`internal/usage` 核心逻辑，仅替换 UI 层；
+4. **阈值桌面通知** —— 用量超过阈值（如 90%）时弹一条 Windows toast 提醒。
+5. **更精致的点击面板** —— 用独立 Win32 popup 窗口替代菜单项，展示进度条、额外用量额度等。
+6. **macOS 菜单栏版** —— 复用 `internal/auth`、`internal/usage` 核心逻辑，仅替换 UI 层；
    注意 macOS 的 token 存在 Keychain，需要新增读取分支（`*_darwin.go`）。
-8. **单元测试 + CI** —— 为 `format.go` 等纯函数补测试，并用 GitHub Actions 自动构建/发布
+7. **单元测试 + CI** —— 为 `format.go` 等纯函数补测试，并用 GitHub Actions 自动构建/发布
    多架构（amd64/arm64）release。
+
+> ✅ 已完成：**动态仪表图标**（弧长按真实百分比绘制，见 [`assets/gauge.go`](assets/gauge.go)）。
