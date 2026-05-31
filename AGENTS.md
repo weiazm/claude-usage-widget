@@ -49,19 +49,42 @@ rsrc -ico assets\app.ico -arch amd64 -o rsrc_windows_amd64.syso  # 嵌入资源�
 
 ```
 main.go                      入口：单实例判断 → 运行时调优 → tray.Run()
+dpi_windows.go               init() 里把进程标记为“每显示器 DPI 感知 V2”（早于任何窗口创建），杜绝位图拉伸糊化
 internal/
   auth/auth.go               读 ~/.claude/.credentials.json，取 token、判过期（只读，从不写）
   usage/usage.go             调 /api/oauth/usage、解析 JSON（Window 用 *指针 表达 null）
   usage/format.go            把用量格式化为可读文本（纯函数，最适合补单测）
-  tray/tray.go               托盘图标+菜单+60s 轮询循环；onExit=os.Exit(0) 保证退干净
+  config/config.go           读 ~/.claude/claude-usage-widget.json（轮询间隔/图标取色窗口）
+  panel/panel_windows.go     左键弹出的独立 Win32+GDI 用量面板（进度条/额外用量/「立即刷新·退出」按钮；惰性创建、自带 UI 线程、按 DPI 缩放）
+  tray/tray.go               托盘图标+轮询循环；左键→面板、右键→仅「退出」兜底；onExit=os.Exit(0)
   dialog/dialog_windows.go   Win32 MessageBoxW 弹窗
   singleinstance/*_windows.go  Win32 命名互斥量实现单实例
-assets/gauge.go              纯 Go 绘制动态仪表图标（托盘 + exe 应用图标的唯一绘制来源）
+assets/gauge.go              纯 Go 绘制动态仪表图标（托盘 + exe 图标 + 面板进度条配色的唯一来源）
 cmd/usagecheck/              命令行自检
 cmd/makeappicon/             生成 exe 应用图标 app.ico（复用 assets.RenderICO）
 rsrc_windows_amd64.syso      由 app.ico 生成的资源，go build 自动链接出 exe 图标（已提交）
 build.ps1                    构建脚本（见上）
 ```
+
+### 点击面板线程模型（panel 包，易踩坑）
+
+Win32 窗口的消息只会被「创建它的那个线程」的消息循环派发。systray 有自己的线程/循环，所以
+`panel` 自起一条 `runtime.LockOSThread()` 的 OS 线程，在上面建窗口并跑 `GetMessage` 循环。
+外部（systray 左键回调、轮询 goroutine）**只能用 `PostMessage` 跨线程投递**自定义消息
+（`wmToggle`/`wmRefresh`），绝不要从别的线程直接调窗口的 GDI/显隐函数。面板配色用
+`assets.BarColor(pct)`，与图标同源。面板底部「立即刷新/退出」两个按钮在 `WM_LBUTTONUP` 里按
+`buttonRects()` 做命中测试，回调 `onRefresh/onQuit`（由 tray 经 `panel.SetActions` 注入，避免
+panel↔tray 循环 import）。
+
+DPI / 清晰度（务必保持）：进程在 `dpi_windows.go` 的 `init()` 里就被设为“每显示器 DPI 感知”，
+所以面板**必须自己按 DPI 缩放**——所有坐标/字号都过 `sc()`（= 逻辑像素 × `scale`），字体随
+DPI 在 `applyDPI`→`rebuildFonts` 重建。布局常量一律写“逻辑像素（96 DPI 基准）”，绘制时再 `sc()`。
+别写死物理像素，否则高缩放下会糊或错位。
+
+低开销要求（务必保持）：面板**惰性创建**——首次左键点击才经 `startOnce` 起线程/建窗口/造
+字体，用户不点就零开销。`Update`/`SetError` 在面板**隐藏时只更新内存、不投递重绘消息**（靠
+`visible` 原子标记判断），避免每分钟无谓唤醒 UI 线程。`GetMessage` 空闲时阻塞、不占 CPU。改面板
+别破坏这几点。
 
 ## 代码约定
 

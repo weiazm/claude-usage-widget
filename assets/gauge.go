@@ -232,11 +232,21 @@ var gaugeStops = []struct {
 	at     float64
 	c1, c2 color.RGBA
 }{
-	{0, color.RGBA{70, 190, 85, 255}, color.RGBA{48, 162, 68, 255}},     // 绿（空闲）
-	{25, color.RGBA{150, 200, 72, 255}, color.RGBA{120, 172, 50, 255}},  // 黄绿
-	{50, color.RGBA{228, 192, 64, 255}, color.RGBA{200, 165, 40, 255}},  // 黄
-	{75, color.RGBA{240, 138, 56, 255}, color.RGBA{212, 108, 36, 255}},  // 橙
-	{100, color.RGBA{230, 58, 52, 255}, color.RGBA{190, 38, 36, 255}},   // 红（接近限额）
+	{0, color.RGBA{70, 190, 85, 255}, color.RGBA{48, 162, 68, 255}},    // 绿（空闲）
+	{25, color.RGBA{150, 200, 72, 255}, color.RGBA{120, 172, 50, 255}}, // 黄绿
+	{50, color.RGBA{228, 192, 64, 255}, color.RGBA{200, 165, 40, 255}}, // 黄
+	{75, color.RGBA{240, 138, 56, 255}, color.RGBA{212, 108, 36, 255}}, // 橙
+	{100, color.RGBA{230, 58, 52, 255}, color.RGBA{190, 38, 36, 255}},  // 红（接近限额）
+}
+
+// BarColor 返回某用量百分比对应的代表色（取渐变上沿色），供点击面板的进度条复用，
+// 保证面板配色与托盘/exe 图标同源（绿→黄→橙→红）。
+//
+// Go 提示：导出这一个小函数，让 panel 包不必重复维护一套色阶——色阶仍只在 gaugeStops
+// 里定义一处。
+func BarColor(pct float64) color.RGBA {
+	c1, _ := gradientColors(pct)
+	return c1
 }
 
 // gradientColors 按百分比在 gaugeStops 之间插值，返回图标背景用的一对渐变色。弧长已经
